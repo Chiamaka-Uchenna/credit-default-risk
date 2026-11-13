@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Credit default risk scoring</title>
+<meta name="description" content="Interactive credit default model and scorecard trained on 30,000 real credit card customers.">
+<link rel="stylesheet" href="app.css">
+<script src="https://cdn.plot.ly/plotly-basic-2.35.2.min.js"></script>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <p class="eyebrow">Finance · Credit risk</p>
+    <h1>Who should a lender approve?</h1>
+    <p class="lede">A probability of default model and credit score built from six months of real repayment behaviour, with a profit-based approval cutoff and a fairness audit. The model runs in your browser.</p>
+    <div class="links">
+      <a href="https://github.com/Chiamaka-Uchenna/credit-default-risk/blob/main/notebooks/credit_default_risk.ipynb">Read the notebook</a>
+      <a href="https://github.com/Chiamaka-Uchenna/credit-default-risk">Source on GitHub</a>
+      <a href="https://archive.ics.uci.edu/dataset/350/default+of+credit+card+clients">Dataset (UCI)</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section><div class="tiles" id="tiles"></div></section>
+
+  <section>
+    <h2>Score a customer</h2>
+    <p class="section-note">Enter six months of account history. Amounts are in New Taiwan dollars, as in the source data. This is a research demonstration and not a lending tool.</p>
+    <div class="card">
+      <div class="form-grid" id="form">
+        <label class="field">Credit limit<input type="number" id="f-limit" min="10000" max="1000000" step="10000" value="140000"></label>
+        <label class="field">Latest statement balance<input type="number" id="f-bill1" min="0" max="1000000" step="1000" value="45000"></label>
+        <label class="field">Previous statement balance<input type="number" id="f-bill2" min="0" max="1000000" step="1000" value="44000"></label>
+        <label class="field">Balance six months ago<input type="number" id="f-bill6" min="0" max="1000000" step="1000" value="40000"></label>
+        <label class="field">Average balance, six months<input type="number" id="f-billavg" min="0" max="1000000" step="1000" value="42000"></label>
+        <label class="field">Last payment made<input type="number" id="f-pay1" min="0" max="1000000" step="500" value="2000"></label>
+        <label class="field">Total paid, six months<input type="number" id="f-paytotal" min="0" max="3000000" step="1000" value="12000"></label>
+      </div>
+      <h3 style="margin-top:16px">Repayment status by month</h3>
+      <p class="sub">Month 1 is the most recent.</p>
+      <div class="form-grid" id="status"></div>
+      <div class="controls" style="margin-top:16px;margin-bottom:0">
+        <label class="field" style="min-width:260px">A default costs as much as <output id="o-loss"></output><input type="range" id="s-loss" min="1" max="15" step="1" value="5"></label>
+      </div>
+      <div class="result">
+        <div>
+          <div class="label">Probability of default next month</div>
+          <div class="big" id="pd">–</div>
+          <span class="badge" id="decision"></span>
+        </div>
+        <div>
+          <p><strong id="score"></strong></p>
+          <div class="meter"><div id="meter"></div></div>
+          <p id="explain"></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Setting the approval cutoff</h2>
+    <p class="section-note">A good account earns one unit. A default costs the number of units set by the slider above. The curve shows total profit on the held-out test customers if the lender approves the lowest-risk share shown on the horizontal axis.</p>
+    <div class="card">
+      <div class="chart" id="c-profit"></div>
+      <p class="sub" id="profit-text" style="margin-top:8px"></p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What separates defaulters</h2>
+    <div class="grid">
+      <div class="card"><h3>Default rate by latest repayment status</h3><p class="sub">Months behind on the most recent statement. Zero or less means not behind.</p><div class="chart" id="c-status"></div></div>
+      <div class="card"><h3>Default rate by credit limit</h3><p class="sub">Customers with lower limits default more often.</p><div class="chart" id="c-limit"></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>How good is the model</h2>
+    <p class="section-note">Evaluated on 20 percent of customers held out from training.</p>
+    <div class="grid">
+      <div class="card"><h3>Predicted against observed default</h3><p class="sub">Each point is a tenth of test customers.</p><div class="chart" id="c-cal"></div></div>
+      <div class="card"><h3>Credit score distribution</h3><p class="sub">Higher scores mean lower risk. Every 50 points doubles the odds of repaying.</p><div class="chart" id="c-hist"></div></div>
+      <div class="card"><h3>What drives the predictions</h3><p class="sub">Mean absolute SHAP value, in log-odds.</p><div class="chart" id="c-imp"></div></div>
+      <div class="card"><h3>Model comparison</h3><p class="sub">Leaving demographics out costs almost nothing.</p><div class="table-wrap" style="max-height:none"><table id="t-metrics"></table></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Fairness audit</h2>
+    <p class="section-note">The model was not given sex, age, education or marital status. This table checks the outcomes anyway, at a cutoff where a default costs five good accounts. The four-fifths rule asks that every group's approval rate is at least 80 percent of the highest group's.</p>
+    <div class="card"><div class="table-wrap" style="max-height:none"><table id="t-fair"></table></div></div>
+  </section>
+
+  <section>
+    <h2>Method and limits</h2>
+    <ul class="notes">
+      <li>Data: 30,000 credit card customers of a bank in Taiwan, April to September 2005, with default observed the following month (Yeh and Lien, 2009).</li>
+      <li>Model: gradient boosted trees with monotonic constraints, so that more late payments can never lower predicted risk. Fifteen behavioural features and no demographics.</li>
+      <li>Every customer in the data already held a card, so the model has not seen rejected applicants. Using it for new applications would need reject inference.</li>
+      <li>Default behaviour changes with the economic cycle. A production model needs out-of-time validation and regular recalibration.</li>
+    </ul>
+  </section>
+</main>
+
+<footer><div class="wrap">Built by Chiamaka Uchenna. Data from the UCI Machine Learning Repository.</div></footer>
+
+<script src="core.js"></script>
+<script>
+const STATUS = [[-2, "No balance to pay"], [-1, "Paid in full"], [0, "Paid the minimum"], [1, "1 month behind"], [2, "2 months behind"],
+  [3, "3 months behind"], [4, "4 months behind"], [5, "5 months behind"], [6, "6 months behind"], [7, "7 months behind"], [8, "8 or more months behind"]];
+const NAMES = {
+  status_1: "Latest repayment status", status_2: "Status 2 months ago", status_3: "Status 3 months ago", max_delay: "Worst delay in six months",
+  months_late: "Months with a late payment", limit: "Credit limit", util_mean: "Average utilisation", util_latest: "Latest utilisation",
+  last_payment: "Last payment amount", pay_ratio: "Share of bills paid", bill_trend: "Change in balance", last_pay_ratio: "Last payment as share of bill",
+};
+const clip = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const num = (id) => Number(document.getElementById(id).value) || 0;
+
+(async () => {
+  const [model, s] = await Promise.all([DS.load("data/model.json"), DS.load("data/summary.json")]);
+  const chosen = s.metrics.find((m) => m.model.includes("chosen"));
+
+  DS.tiles("tiles", [
+    { label: "Customers analysed", value: DS.fmt(s.customers, 0), note: "real credit card accounts" },
+    { label: "Default rate", value: DS.pct(s.base_rate), note: "defaulted the following month" },
+    { label: "Model AUROC", value: chosen.AUROC.toFixed(3), note: `Gini ${chosen.Gini.toFixed(2)}, KS ${chosen.KS.toFixed(2)}` },
+    { label: "Demographic inputs", value: "0", note: "behaviour only, audited for fairness" },
+  ]);
+
+  const statusBox = document.getElementById("status");
+  for (let i = 1; i <= 6; i++) {
+    const label = document.createElement("label");
+    label.className = "field";
+    label.textContent = `Month ${i}`;
+    const select = document.createElement("select");
+    select.id = `f-status${i}`;
+    DS.fill(select, STATUS, 0);
+    label.appendChild(select);
+    statusBox.appendChild(label);
+  }
+
+  const toScore = (p) => {
+    const q = clip(p, 1e-4, 1 - 1e-4);
+    return 600 + 50 * Math.log2((1 - q) / q / 10);
+  };
+
+  const order = s.test_sorted;
+  const n = order.y.length;
+
+  const profit = (loss) => {
+    const xs = [0], ys = [0];
+    let total = 0, best = -Infinity, bestAt = 0, atCut = 0, cutCount = 0, cutDefaults = 0;
+    const cut = 1 / (1 + loss);
+    const step = Math.ceil(n / 250);
+    for (let i = 0; i < n; i++) {
+      total += order.y[i] ? -loss : 1;
+      if (order.p[i] < cut) { atCut = total; cutCount = i + 1; cutDefaults += order.y[i]; }
+      if (total > best) { best = total; bestAt = i + 1; }
+      if ((i + 1) % step === 0 || i === n - 1) { xs.push(((i + 1) / n) * 100); ys.push(total); }
+    }
+    return { xs, ys, all: total, cut, atCut, cutCount, cutDefaults, best, bestAt };
+  };
+
+  const update = () => {
+    const loss = num("s-loss");
+    document.getElementById("o-loss").textContent = `${loss} good account${loss === 1 ? "" : "s"}`;
+    const limit = Math.max(1, num("f-limit"));
+    const statuses = [1, 2, 3, 4, 5, 6].map((i) => Number(document.getElementById(`f-status${i}`).value));
+    const bill1 = num("f-bill1"), bill2 = num("f-bill2"), bill6 = num("f-bill6"), billAvg = num("f-billavg");
+    const pay1 = num("f-pay1"), payTotal = num("f-paytotal");
+    const values = {
+      limit,
+      max_delay: Math.max(...statuses),
+      months_late: statuses.filter((v) => v >= 1).length,
+      util_latest: clip(bill1 / limit, -0.5, 2),
+      util_mean: clip(billAvg / limit, -0.5, 2),
+      bill_trend: clip((bill1 - bill6) / limit, -2, 2),
+      pay_ratio: clip(payTotal / Math.max(billAvg * 6, 1), 0, 2),
+      last_pay_ratio: clip(pay1 / Math.max(bill2, 1), 0, 2),
+      last_payment: pay1,
+    };
+    statuses.forEach((v, i) => { values[`status_${i + 1}`] = v; });
+    const p = DS.predict(model, DS.vector(model, values));
+    const cut = 1 / (1 + loss);
+    document.getElementById("pd").textContent = DS.pct(p);
+    document.getElementById("score").textContent = `Credit score ${Math.round(toScore(p))}`;
+    document.getElementById("meter").style.width = `${clip(((toScore(p) - 300) / 450) * 100, 2, 100)}%`;
+    const decision = document.getElementById("decision");
+    const approve = p < cut;
+    decision.className = `badge ${approve ? "good" : "critical"}`;
+    decision.textContent = approve ? "Approve" : "Decline";
+    document.getElementById("explain").textContent =
+      `Break-even risk is ${DS.pct(cut)} when a default costs ${loss} good account${loss === 1 ? "" : "s"}. ` +
+      `This customer is at ${(p / s.base_rate).toFixed(1)} times the portfolio average of ${DS.pct(s.base_rate)}. ` +
+      `Utilisation ${DS.pct(values.util_latest, 0)}, ${values.months_late} late month${values.months_late === 1 ? "" : "s"} in six.`;
+
+    const r = profit(loss);
+    DS.plot("c-profit", [
+      { x: r.xs, y: r.ys, mode: "lines", name: "Total profit", line: { color: DS.css("--series-1"), width: 2 },
+        hovertemplate: "Approve lowest-risk %{x:.0f}%<br>Profit %{y:,.0f} units<extra></extra>" },
+      { x: [(r.cutCount / n) * 100], y: [r.atCut], mode: "markers", name: "Break-even cutoff",
+        marker: { color: DS.css("--series-2"), size: 11, line: { color: DS.css("--surface-1"), width: 2 } },
+        hovertemplate: "Break-even cutoff<br>Approve %{x:.0f}%<br>Profit %{y:,.0f} units<extra></extra>" },
+    ], { xaxis: { title: "Share of customers approved, lowest risk first (%)" }, yaxis: { title: "Total profit (units)", zeroline: true, zerolinecolor: DS.css("--border") } }, { table: false });
+    document.getElementById("profit-text").textContent =
+      `Approving customers below ${DS.pct(r.cut)} risk approves ${Math.round((r.cutCount / n) * 100)}% of the ${DS.fmt(n, 0)} test customers, ` +
+      `with a default rate of ${r.cutCount ? DS.pct(r.cutDefaults / r.cutCount) : "n/a"} among them, for a profit of ${DS.fmt(r.atCut, 0)} units. ` +
+      `Approving everyone gives ${DS.fmt(r.all, 0)} units. The best possible cutoff in hindsight gives ${DS.fmt(r.best, 0)}.`;
+  };
+  document.querySelector("main").addEventListener("input", update);
+  update();
+
+  const baseLine = { type: "line", xref: "paper", x0: 0, x1: 1, y0: s.base_rate * 100, y1: s.base_rate * 100, line: { color: DS.css("--text-muted"), dash: "dot", width: 1.5 } };
+  DS.plot("c-status", [{
+    type: "bar", x: s.rate_by_status.map((r) => String(r.PAY_1)), y: s.rate_by_status.map((r) => r.rate * 100), name: "Default rate (%)",
+    marker: { color: DS.css("--series-1") }, customdata: s.rate_by_status.map((r) => DS.fmt(r.customers, 0)),
+    hovertemplate: "Status %{x}<br>%{y:.1f}% defaulted<br>%{customdata} customers<extra></extra>",
+  }], { xaxis: { title: "Months behind on latest statement", type: "category", showgrid: false }, yaxis: { title: "Default rate (%)" }, shapes: [baseLine], bargap: 0.3 });
+
+  DS.plot("c-limit", [{
+    type: "bar", x: s.rate_by_limit.map((r) => r.band), y: s.rate_by_limit.map((r) => r.rate * 100), name: "Default rate (%)",
+    marker: { color: DS.css("--series-1") }, hovertemplate: "Limit %{x}<br>%{y:.1f}% defaulted<extra></extra>",
+  }], { xaxis: { title: "Credit limit (NT$)", type: "category", showgrid: false, tickangle: -35 }, yaxis: { title: "Default rate (%)" }, shapes: [baseLine], bargap: 0.3 });
+
+  const cal = s.calibration;
+  const top = Math.max(...cal.predicted, ...cal.observed) * 100 * 1.08;
+  DS.plot("c-cal", [
+    { x: [0, top], y: [0, top], mode: "lines", name: "Perfect calibration", line: { color: DS.css("--text-muted"), dash: "dot", width: 1.5 }, hoverinfo: "skip" },
+    { x: cal.predicted.map((v) => v * 100), y: cal.observed.map((v) => v * 100), mode: "lines+markers", name: "Model",
+      line: { color: DS.css("--series-1"), width: 2 }, marker: { size: 8 }, hovertemplate: "Predicted %{x:.1f}%<br>Observed %{y:.1f}%<extra></extra>" },
+  ], { xaxis: { title: "Predicted probability of default (%)" }, yaxis: { title: "Observed default rate (%)" } });
+
+  const h = s.score_hist;
+  DS.plot("c-hist", [
+    { type: "bar", x: h.bins, y: h.repaid, name: "Repaid", marker: { color: DS.css("--series-1") }, hovertemplate: "Score %{x}<br>%{y} repaid<extra></extra>" },
+    { type: "bar", x: h.bins, y: h.defaulted, name: "Defaulted", marker: { color: DS.css("--series-2") }, hovertemplate: "Score %{x}<br>%{y} defaulted<extra></extra>" },
+  ], { barmode: "stack", bargap: 0.08, xaxis: { title: "Credit score", showgrid: false }, yaxis: { title: "Test customers" } });
+
+  const imp = [...s.importance].reverse();
+  DS.plot("c-imp", [{
+    type: "bar", orientation: "h", y: imp.map((r) => NAMES[r.feature] || r.feature), x: imp.map((r) => r.value), name: "Mean |SHAP|",
+    marker: { color: DS.css("--series-1") }, hovertemplate: "%{y}<br>%{x:.3f}<extra></extra>",
+  }], { xaxis: { title: "Mean absolute SHAP value" }, yaxis: { showgrid: false }, bargap: 0.3, margin: { l: 200, r: 16, t: 8, b: 44 } });
+
+  const buildTable = (id, headers, rows) => {
+    const table = document.getElementById(id);
+    const head = table.insertRow();
+    headers.forEach((t) => { const th = document.createElement("th"); th.textContent = t; head.appendChild(th); });
+    rows.forEach((cells) => { const row = table.insertRow(); cells.forEach((c) => { row.insertCell().textContent = c; }); });
+  };
+  buildTable("t-metrics", ["Model", "AUROC", "Gini", "KS", "Brier"],
+    s.metrics.map((m) => [m.model, m.AUROC.toFixed(3), m.Gini.toFixed(3), m.KS.toFixed(3), m.Brier.toFixed(4)]));
+  buildTable("t-fair", ["Group", "Customers", "Approval rate", "Ratio to highest", "Default rate if approved", "Observed default", "Predicted default"],
+    s.fairness.map((r) => [r.group, DS.fmt(r.customers, 0), DS.pct(r.approval_rate), r.approval_ratio_to_highest.toFixed(2),
+      DS.pct(r.default_rate_approved), DS.pct(r.observed_default), DS.pct(r.predicted_default)]));
+})().catch((err) => {
+  document.querySelector("main").insertAdjacentHTML("afterbegin", `<p class="section-note">Could not load the dashboard data: ${err.message}</p>`);
+});
+</script>
+</body>
+</html>
